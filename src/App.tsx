@@ -50,6 +50,10 @@ function createEmptyDrafts(players: Player[]): Record<string, RoundData> {
   return Object.fromEntries(players.map((player) => [player.id, { ...EMPTY_ROUND }]));
 }
 
+function hasRoundDraftInput(draft: RoundData): boolean {
+  return draft.numberCards.length > 0 || draft.plusModifiers.length > 0 || draft.x2Modifier || draft.isBust;
+}
+
 function Sparkline({ points }: { points: number[] }) {
   if (points.length === 0) return null;
   const width = 100;
@@ -251,6 +255,7 @@ export default function App() {
                 {players.map((player) => {
                   const draft = roundDrafts[player.id] ?? EMPTY_ROUND;
                   const previewScore = calculateRoundScore(draft);
+                  const hasInput = hasRoundDraftInput(draft);
                   return (
                     <article key={player.id} className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
                       <div className="mb-2 flex items-center justify-between gap-2">
@@ -276,22 +281,37 @@ export default function App() {
 
                       <div className="mb-3 flex items-center justify-between rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2">
                         <p className="text-xs text-slate-400">This round preview</p>
-                        <p
-                          className={`text-lg font-black ${previewScore > 0 ? 'text-emerald-300' : 'text-slate-200'}`}
-                          data-testid={`round-preview-${player.id}`}
-                        >
-                          {previewScore > 0 ? `+${previewScore}` : '0'}
-                        </p>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-wider ${
+                              hasInput
+                                ? 'bg-emerald-400/15 text-emerald-300 ring-1 ring-emerald-400/30'
+                                : 'bg-slate-700/60 text-slate-300 ring-1 ring-slate-600'
+                            }`}
+                          >
+                            {hasInput ? 'Entered' : 'Not entered'}
+                          </span>
+                          <p
+                            className={`text-lg font-black ${previewScore > 0 ? 'text-emerald-300' : 'text-slate-200'}`}
+                            data-testid={`round-preview-${player.id}`}
+                          >
+                            {previewScore > 0 ? `+${previewScore}` : '0'}
+                          </p>
+                        </div>
                       </div>
 
                       <div className="flex gap-2">
                         <button
                           onClick={() => setActivePlayerId(player.id)}
                           data-testid={`edit-player-${player.id}`}
-                          className="flex h-11 flex-1 items-center justify-center gap-2 rounded-lg bg-cyan-500 px-3 font-semibold text-slate-950 transition hover:bg-cyan-400"
+                          className={`flex h-11 flex-1 items-center justify-center gap-2 rounded-lg px-3 font-semibold transition ${
+                            hasInput
+                              ? 'bg-emerald-500 text-slate-950 hover:bg-emerald-400'
+                              : 'bg-cyan-500 text-slate-950 hover:bg-cyan-400'
+                          }`}
                         >
                           <Play className="h-4 w-4" />
-                          Edit round cards
+                          {hasInput ? 'Update entered cards' : 'Enter round cards'}
                         </button>
                         <button
                           onClick={() => removePlayer(player.id)}
