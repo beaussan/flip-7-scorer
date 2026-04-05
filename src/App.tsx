@@ -1,47 +1,109 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { calculateRoundScore, type RoundData } from './logic/scoring';
-import { UserPlus, Users, Trophy, Play, CheckCircle2 } from 'lucide-react';
+import {
+  UserPlus,
+  Users,
+  Trophy,
+  Play,
+  CheckCircle2,
+  TrendingUp,
+  RotateCcw,
+  Trash2,
+  X,
+} from 'lucide-react';
 
 interface Player {
   id: string;
   name: string;
   score: number;
+  history: number[];
+}
+
+interface ScoreLog {
+  id: string;
+  turn: number;
+  playerId: string;
+  playerName: string;
+  roundScore: number;
+  totalScore: number;
+  isBust: boolean;
+}
+
+const DEFAULT_PLAYERS: Player[] = [
+  { id: '1', name: 'Player 1', score: 0, history: [0] },
+  { id: '2', name: 'Player 2', score: 0, history: [0] },
+];
+
+const EMPTY_ROUND: RoundData = {
+  numberCards: [],
+  x2Modifier: false,
+  plusModifiers: [],
+  isBust: false,
+};
+
+function Sparkline({ points }: { points: number[] }) {
+  if (points.length === 0) return null;
+  const width = 100;
+  const height = 36;
+  const min = Math.min(...points);
+  const max = Math.max(...points);
+  const spread = max - min || 1;
+  const chartPoints = points
+    .map((value, index) => {
+      const x = (index / Math.max(points.length - 1, 1)) * width;
+      const y = height - ((value - min) / spread) * height;
+      return `${x},${y}`;
+    })
+    .join(' ');
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="h-9 w-24" aria-hidden="true">
+      <polyline
+        points={chartPoints}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
 }
 
 export default function App() {
-  const [players, setPlayers] = useState<Player[]>([
-    { id: '1', name: 'Player 1', score: 0 },
-    { id: '2', name: 'Player 2', score: 0 }
-  ]);
+  const [players, setPlayers] = useState<Player[]>(DEFAULT_PLAYERS);
+  const [scoreLogs, setScoreLogs] = useState<ScoreLog[]>([]);
   const [newPlayerName, setNewPlayerName] = useState('');
-  
-  // Scoring state for the active player
+
   const [activePlayerId, setActivePlayerId] = useState<string | null>(null);
-  const [currentRound, setCurrentRound] = useState<RoundData>({
-    numberCards: [],
-    x2Modifier: false,
-    plusModifiers: [],
-    isBust: false
-  });
+  const [currentRound, setCurrentRound] = useState<RoundData>(EMPTY_ROUND);
 
   const numberOptions = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
   const plusOptions = [2, 4, 6, 8, 10];
 
+  const activePlayer = players.find((player) => player.id === activePlayerId) ?? null;
+  const roundScorePreview = calculateRoundScore(currentRound);
+
+  const leader = useMemo(() => {
+    if (players.length === 0) return null;
+    return [...players].sort((a, b) => b.score - a.score)[0];
+  }, [players]);
+
   const toggleNumber = (num: number) => {
-    setCurrentRound(prev => {
+    setCurrentRound((prev) => {
       if (prev.numberCards.includes(num)) {
         return { ...prev, numberCards: prev.numberCards.filter(n => n !== num) };
       } else {
-        if (prev.numberCards.length >= 7) return prev; // Max 7 unique cards needed
+        if (prev.numberCards.length >= 7) return prev;
         return { ...prev, numberCards: [...prev.numberCards, num] };
       }
     });
   };
 
   const togglePlus = (num: number) => {
-    setCurrentRound(prev => {
+    setCurrentRound((prev) => {
       if (prev.plusModifiers.includes(num)) {
-        return { ...prev, plusModifiers: prev.plusModifiers.filter(n => n !== num) };
+        return { ...prev, plusModifiers: prev.plusModifiers.filter((n) => n !== num) };
       } else {
         return { ...prev, plusModifiers: [...prev.plusModifiers, num] };
       }
@@ -49,134 +111,259 @@ export default function App() {
   };
 
   const addPlayer = () => {
-    if (newPlayerName.trim()) {
-      setPlayers([...players, { id: Date.now().toString(), name: newPlayerName.trim(), score: 0 }]);
-      setNewPlayerName('');
+    const nextName = newPlayerName.trim();
+    if (!nextName) return;
+    setPlayers((prev) => [...prev, { id: Date.now().toString(), name: nextName, score: 0, history: [0] }]);
+    setNewPlayerName('');
+  };
+
+  const removePlayer = (playerId: string) => {
+    setPlayers((prev) => prev.filter((player) => player.id !== playerId));
+    if (activePlayerId === playerId) {
+      setActivePlayerId(null);
+      setCurrentRound(EMPTY_ROUND);
     }
+    setScoreLogs((prev) => prev.filter((log) => log.playerId !== playerId));
+  };
+
+  const resetMatch = () => {
+    setPlayers((prev) => prev.map((player) => ({ ...player, score: 0, history: [0] })));
+    setScoreLogs([]);
+    setActivePlayerId(null);
+    setCurrentRound(EMPTY_ROUND);
+  };
+
+  const startScoring = (playerId: string) => {
+    setActivePlayerId(playerId);
+    setCurrentRound(EMPTY_ROUND);
   };
 
   const submitScore = () => {
-    if (!activePlayerId) return;
-    const roundScore = calculateRoundScore(currentRound);
-    
-    setPlayers(players.map(p => 
-      p.id === activePlayerId 
-        ? { ...p, score: p.score + roundScore }
-        : p
-    ));
-    
+    if (!activePlayer) return;
+    const roundScore = roundScorePreview;
+    const nextTotal = activePlayer.score + roundScore;
+
+    setPlayers((prev) =>
+      prev.map((player) =>
+        player.id === activePlayer.id
+          ? { ...player, score: nextTotal, history: [...player.history, nextTotal] }
+          : player,
+      ),
+    );
+    setScoreLogs((prev) => [
+      {
+        id: `${Date.now()}`,
+        turn: prev.length + 1,
+        playerId: activePlayer.id,
+        playerName: activePlayer.name,
+        roundScore,
+        totalScore: nextTotal,
+        isBust: currentRound.isBust,
+      },
+      ...prev,
+    ]);
     setActivePlayerId(null);
-    setCurrentRound({
-      numberCards: [],
-      x2Modifier: false,
-      plusModifiers: [],
-      isBust: false
-    });
+    setCurrentRound(EMPTY_ROUND);
   };
 
   return (
-    <div className="min-h-screen bg-neutral-900 text-neutral-100 p-4 md:p-8 font-sans">
-      <div className="max-w-4xl mx-auto space-y-8">
-        
-        {/* Header */}
-        <header className="flex items-center gap-3 border-b border-neutral-800 pb-4">
-          <Trophy className="text-yellow-500 w-8 h-8" />
-          <h1 className="text-3xl font-bold tracking-tight">Flip 7 Scorer</h1>
-        </header>
-
-        {/* Main Content */}
-        <div className="grid md:grid-cols-2 gap-8">
-          
-          {/* Left Column: Player List */}
-          <div className="space-y-6">
-            <div className="bg-neutral-800 p-6 rounded-2xl shadow-xl">
-              <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-                <Users className="w-5 h-5 text-blue-400" />
-                Players
-              </h2>
-              
-              <div className="space-y-3 mb-6">
-                {players.map(player => (
-                  <div key={player.id} className="flex items-center justify-between bg-neutral-700/50 p-3 rounded-xl">
-                    <span className="font-medium text-lg">{player.name}</span>
-                    <div className="flex items-center gap-4">
-                      <span className="text-2xl font-bold text-yellow-400">{player.score}</span>
-                      <button 
-                        onClick={() => setActivePlayerId(player.id)}
-                        className="bg-blue-600 hover:bg-blue-500 text-white p-2 rounded-lg transition-colors"
-                        title="Score Round"
-                      >
-                        <Play className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="flex gap-2">
-                <input 
-                  type="text" 
-                  value={newPlayerName}
-                  onChange={e => setNewPlayerName(e.target.value)}
-                  placeholder="New Player Name"
-                  className="flex-1 bg-neutral-900 border border-neutral-700 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none"
-                  onKeyDown={e => e.key === 'Enter' && addPlayer()}
-                />
-                <button 
-                  onClick={addPlayer}
-                  className="bg-neutral-700 hover:bg-neutral-600 px-4 py-2 rounded-lg transition-colors"
-                >
-                  <UserPlus className="w-5 h-5" />
-                </button>
-              </div>
+    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-100">
+      <div className="mx-auto w-full max-w-5xl px-3 pb-24 pt-4 sm:px-5">
+        <header className="mb-4 rounded-2xl border border-slate-800/80 bg-slate-900/70 p-4 shadow-xl backdrop-blur">
+          <div className="mb-3 flex items-center gap-3">
+            <div className="rounded-xl bg-amber-400/10 p-2 text-amber-300">
+              <Trophy className="h-5 w-5" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Flip 7 Helper</h1>
+              <p className="text-xs text-slate-400 sm:text-sm">Mobile-first scoring and points evolution</p>
             </div>
           </div>
 
-          {/* Right Column: Active Scoring */}
-          {activePlayerId ? (
-            <div className="bg-neutral-800 p-6 rounded-2xl shadow-xl border border-blue-500/30">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-semibold">
-                  Scoring: <span className="text-blue-400">{players.find(p => p.id === activePlayerId)?.name}</span>
+          <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
+            <div className="rounded-xl border border-slate-800 bg-slate-900/90 p-3">
+              <p className="text-xs text-slate-400">Players</p>
+              <p className="text-lg font-bold">{players.length}</p>
+            </div>
+            <div className="rounded-xl border border-slate-800 bg-slate-900/90 p-3">
+              <p className="text-xs text-slate-400">Turns</p>
+              <p className="text-lg font-bold">{scoreLogs.length}</p>
+            </div>
+            <div className="rounded-xl border border-slate-800 bg-slate-900/90 p-3 col-span-2 sm:col-span-1">
+              <p className="text-xs text-slate-400">Leader</p>
+              <p className="truncate text-lg font-bold">{leader?.name ?? 'None'}</p>
+            </div>
+            <button
+              onClick={resetMatch}
+              className="col-span-2 flex items-center justify-center gap-2 rounded-xl border border-rose-400/30 bg-rose-500/10 p-3 font-semibold text-rose-200 transition hover:bg-rose-500/20 sm:col-span-1"
+            >
+              <RotateCcw className="h-4 w-4" />
+              Reset Match
+            </button>
+          </div>
+        </header>
+
+        <main className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+          <section className="space-y-4">
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4 shadow-lg">
+              <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-300">
+                <Users className="h-4 w-4 text-cyan-300" />
+                Players
+              </div>
+
+              <div className="space-y-3">
+                {players.map((player) => (
+                  <article
+                    key={player.id}
+                    data-testid={`player-card-${player.id}`}
+                    className="rounded-xl border border-slate-800 bg-slate-950/60 p-3"
+                  >
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <div>
+                        <p className="text-base font-semibold">{player.name}</p>
+                        <p className="text-xs text-slate-400">Track to 200 points</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-slate-400">Total</p>
+                        <p className="text-2xl font-black text-amber-300" data-testid={`player-total-${player.id}`}>
+                          {player.score}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mb-3 flex items-center justify-between rounded-lg bg-slate-900/70 px-2 py-1.5 text-cyan-300">
+                      <div className="flex items-center gap-1 text-xs font-semibold text-slate-300">
+                        <TrendingUp className="h-3.5 w-3.5" />
+                        Points trend
+                      </div>
+                      <Sparkline points={player.history} />
+                    </div>
+
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => startScoring(player.id)}
+                        data-testid={`score-player-${player.id}`}
+                        className="flex h-11 flex-1 items-center justify-center gap-2 rounded-lg bg-cyan-500 px-3 font-semibold text-slate-950 transition hover:bg-cyan-400"
+                      >
+                        <Play className="h-4 w-4" />
+                        Score Turn
+                      </button>
+                      <button
+                        onClick={() => removePlayer(player.id)}
+                        disabled={players.length <= 1}
+                        className="flex h-11 w-11 items-center justify-center rounded-lg border border-slate-700 bg-slate-900 text-slate-300 transition hover:border-rose-400/50 hover:text-rose-300 disabled:cursor-not-allowed disabled:opacity-40"
+                        title="Remove player"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+
+              <div className="mt-3 flex gap-2">
+                <input
+                  type="text"
+                  value={newPlayerName}
+                  onChange={(event) => setNewPlayerName(event.target.value)}
+                  placeholder="New player"
+                  className="h-11 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 text-sm outline-none ring-cyan-400 transition placeholder:text-slate-500 focus:ring-2"
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') addPlayer();
+                  }}
+                />
+                <button
+                  onClick={addPlayer}
+                  data-testid="add-player-button"
+                  className="flex h-11 items-center gap-2 rounded-lg bg-slate-100 px-4 font-semibold text-slate-900 transition hover:bg-white"
+                >
+                  <UserPlus className="h-4 w-4" />
+                  Add
+                </button>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4 shadow-lg">
+              <p className="mb-3 text-sm font-semibold text-slate-200">Turn history</p>
+              {scoreLogs.length === 0 ? (
+                <p className="rounded-lg border border-dashed border-slate-700 p-4 text-sm text-slate-400">
+                  No turns yet. Score a player to start the timeline.
+                </p>
+              ) : (
+                <div className="max-h-72 space-y-2 overflow-auto pr-1">
+                  {scoreLogs.map((log) => (
+                    <article key={log.id} className="rounded-lg border border-slate-800 bg-slate-950/70 p-3 text-sm">
+                      <div className="mb-1 flex items-center justify-between gap-3">
+                        <p className="font-semibold text-slate-100">
+                          Turn {log.turn} - {log.playerName}
+                        </p>
+                        <p className={`font-bold ${log.roundScore > 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                          {log.roundScore > 0 ? `+${log.roundScore}` : '0'}
+                        </p>
+                      </div>
+                      <p className="text-xs text-slate-400">
+                        Total {log.totalScore} {log.isBust ? '- Busted' : ''}
+                      </p>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section className="hidden rounded-2xl border border-dashed border-slate-700 bg-slate-900/30 p-4 text-sm text-slate-400 lg:block">
+            Pick a player to open the scoring panel. On phones, scoring opens as a bottom sheet to stay thumb-friendly.
+          </section>
+        </main>
+
+        {activePlayer ? (
+          <>
+            <button
+              className="fixed inset-0 z-20 bg-black/55 lg:hidden"
+              onClick={() => setActivePlayerId(null)}
+              aria-label="Close scoring panel"
+            />
+            <section className="fixed inset-x-0 bottom-0 z-30 max-h-[88vh] overflow-y-auto rounded-t-3xl border border-slate-700 bg-slate-900 p-4 pb-6 shadow-2xl lg:static lg:mt-4 lg:max-h-none lg:rounded-2xl lg:border-slate-800 lg:bg-slate-900/80">
+              <div className="mb-4 flex items-center justify-between gap-2">
+                <h2 className="text-lg font-bold">
+                  Scoring <span className="text-cyan-300">{activePlayer.name}</span>
                 </h2>
-                <button 
+                <button
                   onClick={() => setActivePlayerId(null)}
-                  className="text-neutral-400 hover:text-white"
+                  className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-700 bg-slate-950 text-slate-300"
+                  aria-label="Close"
                 >
-                  Cancel
+                  <X className="h-4 w-4" />
                 </button>
               </div>
 
-              {/* Bust Toggle */}
-              <div className="mb-6">
-                <button 
-                  onClick={() => setCurrentRound(prev => ({ ...prev, isBust: !prev.isBust }))}
-                  className={`w-full py-4 rounded-xl font-bold text-lg transition-all ${
-                    currentRound.isBust 
-                      ? 'bg-red-600 text-white shadow-[0_0_15px_rgba(220,38,38,0.5)]' 
-                      : 'bg-neutral-700 text-neutral-300 hover:bg-neutral-600'
-                  }`}
-                >
-                  {currentRound.isBust ? 'BUSTED (0 Points)' : 'Did Player Bust?'}
-                </button>
-              </div>
+              <button
+                onClick={() => setCurrentRound((prev) => ({ ...prev, isBust: !prev.isBust }))}
+                data-testid="bust-toggle"
+                className={`mb-4 h-12 w-full rounded-xl text-base font-bold transition ${
+                  currentRound.isBust
+                    ? 'bg-rose-500 text-white shadow-[0_0_0_3px_rgba(244,63,94,0.3)]'
+                    : 'border border-slate-700 bg-slate-950 text-slate-200 hover:border-rose-400/40'
+                }`}
+              >
+                {currentRound.isBust ? 'Busted (score 0)' : 'Mark as busted'}
+              </button>
 
-              <div className={`space-y-6 transition-opacity ${currentRound.isBust ? 'opacity-30 pointer-events-none' : ''}`}>
-                
-                {/* Number Cards */}
-                <div>
-                  <h3 className="text-sm font-medium text-neutral-400 mb-3 uppercase tracking-wider">Number Cards</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {numberOptions.map(num => {
-                      const isSelected = currentRound.numberCards.includes(num);
+              <div className={`${currentRound.isBust ? 'pointer-events-none opacity-40' : ''}`}>
+                <div className="mb-4">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Number cards (unique)</p>
+                  <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
+                    {numberOptions.map((num) => {
+                      const selected = currentRound.numberCards.includes(num);
                       return (
                         <button
-                          key={`num-${num}`}
+                          key={num}
                           onClick={() => toggleNumber(num)}
-                          className={`w-12 h-16 rounded-xl font-bold text-xl transition-all ${
-                            isSelected 
-                              ? 'bg-blue-600 text-white border-2 border-blue-400 shadow-lg' 
-                              : 'bg-neutral-700 text-neutral-300 border-2 border-transparent hover:bg-neutral-600'
+                          data-testid={`number-card-${num}`}
+                          className={`h-12 rounded-lg border text-base font-bold transition ${
+                            selected
+                              ? 'border-cyan-300 bg-cyan-400/20 text-cyan-200'
+                              : 'border-slate-700 bg-slate-950 text-slate-200 hover:border-slate-500'
                           }`}
                         >
                           {num}
@@ -186,65 +373,60 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Modifiers */}
-                <div>
-                  <h3 className="text-sm font-medium text-neutral-400 mb-3 uppercase tracking-wider">Modifiers</h3>
-                  <div className="flex flex-wrap gap-2">
+                <div className="mb-4">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Modifiers</p>
+                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
                     <button
-                      onClick={() => setCurrentRound(prev => ({ ...prev, x2Modifier: !prev.x2Modifier }))}
-                      className={`h-12 px-6 rounded-xl font-bold text-lg transition-all ${
-                        currentRound.x2Modifier 
-                          ? 'bg-purple-600 text-white border-2 border-purple-400 shadow-lg' 
-                          : 'bg-neutral-700 text-neutral-300 border-2 border-transparent hover:bg-neutral-600'
+                      onClick={() => setCurrentRound((prev) => ({ ...prev, x2Modifier: !prev.x2Modifier }))}
+                      data-testid="x2-toggle"
+                      className={`h-11 rounded-lg border text-sm font-bold transition ${
+                        currentRound.x2Modifier
+                          ? 'border-sky-300 bg-sky-500/20 text-sky-200'
+                          : 'border-slate-700 bg-slate-950 text-slate-200'
                       }`}
                     >
-                      ×2
+                      x2
                     </button>
-                    {plusOptions.map(num => {
-                      const isSelected = currentRound.plusModifiers.includes(num);
+                    {plusOptions.map((plus) => {
+                      const selected = currentRound.plusModifiers.includes(plus);
                       return (
                         <button
-                          key={`plus-${num}`}
-                          onClick={() => togglePlus(num)}
-                          className={`h-12 px-5 rounded-xl font-bold text-lg transition-all ${
-                            isSelected 
-                              ? 'bg-emerald-600 text-white border-2 border-emerald-400 shadow-lg' 
-                              : 'bg-neutral-700 text-neutral-300 border-2 border-transparent hover:bg-neutral-600'
+                          key={plus}
+                          onClick={() => togglePlus(plus)}
+                          data-testid={`plus-card-${plus}`}
+                          className={`h-11 rounded-lg border text-sm font-bold transition ${
+                            selected
+                              ? 'border-emerald-300 bg-emerald-500/20 text-emerald-200'
+                              : 'border-slate-700 bg-slate-950 text-slate-200'
                           }`}
                         >
-                          +{num}
+                          +{plus}
                         </button>
                       );
                     })}
                   </div>
                 </div>
-
-                {/* Live Score Preview */}
-                <div className="bg-neutral-900 p-4 rounded-xl border border-neutral-700 flex justify-between items-center">
-                  <span className="text-neutral-400 font-medium">Round Score:</span>
-                  <span className="text-4xl font-black text-yellow-400">
-                    {calculateRoundScore(currentRound)}
-                  </span>
-                </div>
               </div>
 
-              {/* Submit Button */}
-              <button 
-                onClick={submitScore}
-                className="w-full mt-6 bg-yellow-500 hover:bg-yellow-400 text-black font-bold text-lg py-4 rounded-xl transition-colors flex items-center justify-center gap-2"
-              >
-                <CheckCircle2 className="w-6 h-6" />
-                Confirm Score
-              </button>
-
-            </div>
-          ) : (
-            <div className="bg-neutral-800/50 border border-neutral-800 p-6 rounded-2xl flex flex-col items-center justify-center text-center text-neutral-500 min-h-[400px]">
-              <Play className="w-16 h-16 mb-4 opacity-20" />
-              <p className="text-lg">Select a player to score their round</p>
-            </div>
-          )}
-        </div>
+              <div className="sticky bottom-0 grid grid-cols-[1fr_auto] items-center gap-2 rounded-2xl border border-slate-700 bg-slate-950/95 p-3">
+                <div>
+                  <p className="text-xs text-slate-400">Turn score</p>
+                  <p className="text-3xl font-black text-amber-300" data-testid="round-score-preview">
+                    {roundScorePreview}
+                  </p>
+                </div>
+                <button
+                  onClick={submitScore}
+                  data-testid="confirm-score"
+                  className="flex h-12 items-center gap-2 rounded-xl bg-amber-400 px-4 text-sm font-bold text-slate-900 transition hover:bg-amber-300"
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  Confirm
+                </button>
+              </div>
+            </section>
+          </>
+        ) : null}
       </div>
     </div>
   );
