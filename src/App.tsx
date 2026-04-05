@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { calculateRoundScore, type RoundData } from './logic/scoring';
+import { calculateRoundBreakdown, calculateRoundScore, type RoundData } from './logic/scoring';
 import {
   CheckCircle2,
   CircleOff,
@@ -95,6 +95,7 @@ export default function App() {
 
   const activePlayer = players.find((player) => player.id === activePlayerId) ?? null;
   const activeDraft = activePlayerId ? roundDrafts[activePlayerId] ?? EMPTY_ROUND : EMPTY_ROUND;
+  const activeBreakdown = calculateRoundBreakdown(activeDraft);
 
   const leader = useMemo(() => {
     if (players.length === 0) return null;
@@ -502,8 +503,19 @@ export default function App() {
                 <div className="mb-2 flex items-center justify-between">
                   <p className="text-xs text-slate-400">Current preview</p>
                   <p className="text-3xl font-black text-amber-300" data-testid="round-score-preview">
-                    {calculateRoundScore(activeDraft)}
+                    {activeBreakdown.total}
                   </p>
+                </div>
+                <div className="mb-3 space-y-1 text-xs text-slate-400">
+                  <p>Numbers subtotal: {activeBreakdown.numberSum}</p>
+                  <p>
+                    x2 applies to numbers only:{' '}
+                    {activeDraft.x2Modifier
+                      ? `${activeBreakdown.numberSum} x 2 = ${activeBreakdown.multipliedNumberSum}`
+                      : `${activeBreakdown.multipliedNumberSum}`}
+                  </p>
+                  <p>Bonus cards total: +{activeBreakdown.plusSum}</p>
+                  <p>Flip 7 bonus: +{activeBreakdown.flip7Bonus}</p>
                 </div>
                 <button
                   onClick={() => setActivePlayerId(null)}

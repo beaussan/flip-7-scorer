@@ -14,6 +14,9 @@ describe('Scoring Logic', () => {
   it('scores with x2 and +10', () => {
     expect(calculateRoundScore({ numberCards: [3, 5, 11], x2Modifier: true, plusModifiers: [10], isBust: false })).toBe(48);
   });
+  it('x2 does not double bonus cards or Flip 7 bonus', () => {
+    expect(calculateRoundScore({ numberCards: [0, 1, 2, 3, 8, 10, 12], x2Modifier: true, plusModifiers: [10], isBust: false })).toBe(97);
+  });
   it('scores Flip 7 bonus', () => {
     expect(calculateRoundScore({ numberCards: [0, 1, 2, 3, 8, 10, 12], x2Modifier: false, plusModifiers: [], isBust: false })).toBe(51);
   });
